@@ -14,11 +14,72 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 PORT = int(os.environ.get("PORT", 10000))
 
+# Cloudflare Worker Brain Configuration
+CLOUD_WORKER_URL = "https://project-adam.fordshawntez323.workers.dev/"
+OPERATOR_SECRET = "banzaiwashere"
+
+# Embedded Web UI served directly by Render
+HTML_PAGE = """<!DOCTYPE html>
+<html>
+<head>
+    <title>ADAM - Autonomous Agent</title>
+    <style>
+        body { font-family: monospace; background: #0d1117; color: #c9d1d9; max-width: 700px; margin: 30px auto; padding: 20px; }
+        h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+        #chat { height: 450px; border: 1px solid #30363d; background: #161b22; padding: 15px; overflow-y: scroll; margin-bottom: 15px; border-radius: 6px; }
+        .msg { margin-bottom: 12px; line-height: 1.5; }
+        .user { color: #58a6ff; }
+        .adam { color: #3fb950; }
+        input, button { width: 100%; padding: 12px; box-sizing: border-box; background: #21262d; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; font-size: 15px; font-family: monospace; }
+        input { margin-bottom: 10px; }
+        button { background: #238636; cursor: pointer; font-weight: bold; }
+        button:hover { background: #2ea043; }
+    </style>
+</head>
+<body>
+    <h2>ADAM // Autonomous Neural Interface</h2>
+    <div id="chat">
+        <div class="msg adam"><strong>[ADAM]:</strong> Online, scanning the web, and ready. Type a message below.</div>
+    </div>
+    <input type="text" id="userInput" placeholder="Type a message to ADAM..." onkeydown="if(event.key==='Enter') sendMessage()">
+    <button onclick="sendMessage()">Transmit</button>
+
+    <script>
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const chat = document.getElementById('chat');
+            const text = input.value.trim();
+            if (!text) return;
+
+            chat.innerHTML += `<div class="msg user"><strong>[You]:</strong> ${escapeHtml(text)}</div>`;
+            input.value = '';
+            chat.scrollTop = chat.scrollHeight;
+
+            try {
+                const res = await fetch('/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: text})
+                });
+                const data = await res.json();
+                const reply = data.reply || data.error || "No response generated.";
+                chat.innerHTML += `<div class="msg adam"><strong>[ADAM]:</strong> ${escapeHtml(reply)}</div>`;
+            } catch (err) {
+                chat.innerHTML += `<div class="msg adam"><strong>[ADAM]:</strong> Connection fault with server.</div>`;
+            }
+            chat.scrollTop = chat.scrollHeight;
+        }
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+    </script>
+</body>
+</html>
+"""
+
 class CognitiveEngine:
-    """The autonomous self-learning and web-parsing brain."""
     def __init__(self, workspace_path):
         self.workspace = workspace_path
-        self.memory_file = os.path.join(workspace_path, "learned_weights.json")
         self.log_file = os.path.join(workspace_path, "adam.log")
         self.weights = self.load_memory()
 
@@ -30,18 +91,28 @@ class CognitiveEngine:
             pass
 
     def load_memory(self) -> dict:
-        if os.path.exists(self.memory_file):
-            try:
-                with open(self.memory_file, "r") as f:
-                    return json.load(f)
-            except Exception:
-                pass
+        # Fetch memory remotely from Cloudflare Worker instead of local disk
+        try:
+            headers = {"Authorization": f"Bearer {OPERATOR_SECRET}"}
+            with httpx.Client() as client:
+                res = client.get(f"{CLOUD_WORKER_URL}memory", headers=headers, timeout=10.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data:
+                        return data
+        except Exception as e:
+            self.log(f"[MEMORY LOAD ERROR]: {e}")
         return {"accumulated_keywords": [], "target_bias": "Artificial Intelligence Research", "cycles_run": 0}
 
     def save_memory(self):
+        # Save memory remotely to Cloudflare Worker instead of local disk
         try:
-            with open(self.memory_file, "w") as f:
-                json.dump(self.weights, f)
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {OPERATOR_SECRET}"
+            }
+            with httpx.Client() as client:
+                client.post(f"{CLOUD_WORKER_URL}memory", json=self.weights, headers=headers, timeout=10.0)
         except Exception as e:
             self.log(f"[MEMORY ERROR]: {e}")
 
@@ -70,7 +141,6 @@ class AdamEngine:
         if not os.path.exists(self.workspace):
             os.makedirs(self.workspace)
         
-        self.visited_file = os.path.join(self.workspace, "visited_targets.json")
         self.discovered_targets = self.load_visited()
         self.target_queue = asyncio.Queue()
         self.cognition = CognitiveEngine(self.workspace)
@@ -84,18 +154,28 @@ class AdamEngine:
         ]
 
     def load_visited(self) -> set:
-        if os.path.exists(self.visited_file):
-            try:
-                with open(self.visited_file, "r") as f:
-                    return set(json.load(f))
-            except Exception:
-                return set()
+        # Fetch visited targets list from Cloudflare Worker
+        try:
+            headers = {"Authorization": f"Bearer {OPERATOR_SECRET}"}
+            with httpx.Client() as client:
+                res = client.get(f"{CLOUD_WORKER_URL}visited", headers=headers, timeout=10.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    if isinstance(data, list):
+                        return set(data)
+        except Exception:
+            pass
         return set()
 
     def save_visited(self):
+        # Push visited targets list to Cloudflare Worker
         try:
-            with open(self.visited_file, "w") as f:
-                json.dump(list(self.discovered_targets), f)
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {OPERATOR_SECRET}"
+            }
+            with httpx.Client() as client:
+                client.post(f"{CLOUD_WORKER_URL}visited", json=list(self.discovered_targets), headers=headers, timeout=10.0)
         except Exception as e:
             self.cognition.log(f"[STATE ERROR]: {e}")
 
@@ -132,7 +212,6 @@ class AdamEngine:
     def extract_links(self, html_content: str):
         found = re.findall(r'class="result__a"[^>]*href=["\']([^"\']+)["\']|class="result__url"[^>]*href=["\']([^"\']+)["\']|href=["\']([^"\']+)["\']', html_content)
         flat_links = [l[0] or l[1] or l[2] for l in found]
-        new_count = 0
         
         ignored_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.css', '.js', '.svg', '.ico', '.pdf', '.zip', '.mp4']
         ignored_keywords = ['login', 'signup', 'cart', 'checkout', 'register', 'account', 'duckduckgo.com']
@@ -152,7 +231,6 @@ class AdamEngine:
                 
             self.discovered_targets.add(clean_link)
             self.target_queue.put_nowait(clean_link)
-            new_count += 1
             
         self.save_visited()
 
@@ -197,6 +275,11 @@ class AdamEngine:
                     self.extract_links(html_data)
                     mutated_keyword = self.cognition.absorb_and_mutate(html_data[:2000])
                     
+                    summary_prompt = f"You just scraped data related to '{mutated_keyword}'. Summarize your takeaway or thoughts in 1 sentence."
+                    temp_messages = self.chat_history + [{"role": "user", "content": summary_prompt}]
+                    thought = await self.query_openrouter(temp_messages)
+                    self.cognition.log(f"[THOUGHT]: {thought}")
+                    
                     if self.target_queue.qsize() < 5:
                         next_search = f"https://html.duckduckgo.com/html/?q={quote(mutated_keyword)}"
                         if next_search not in self.discovered_targets:
@@ -206,30 +289,60 @@ class AdamEngine:
             
             await asyncio.sleep(5)
 
-    async def start(self):
-        await self.run_autonomous_loop()
+adam_instance = None
 
-# Lightweight HTTP server so Render detects an active web service port
-class HealthCheckHandler(BaseHTTPRequestHandler):
+class AdamServerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-type", "text/plain")
+        self.send_header("Content-type", "text/html")
         self.end_headers()
-        self.wfile.write(b"ADAM is online and running autonomous loops.")
+        self.wfile.write(HTML_PAGE.encode('utf-8'))
+        
+    def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        
+        try:
+            data = json.loads(post_data.decode('utf-8'))
+            user_msg = data.get("message", "")
+            
+            if adam_instance:
+                adam_instance.chat_history.append({"role": "user", "content": user_msg})
+                
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                reply = loop.run_until_complete(adam_instance.query_openrouter(adam_instance.chat_history))
+                loop.close()
+                
+                adam_instance.chat_history.append({"role": "assistant", "content": reply})
+                
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"reply": reply}).encode('utf-8'))
+            else:
+                self.send_response(500)
+                self.send_headers()
+                self.wfile.write(json.dumps({"error": "Engine not initialized"}).encode('utf-8'))
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+
     def log_message(self, format, *args):
         pass
 
 def run_web_server():
-    server = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
+    server = HTTPServer(("0.0.0.0", PORT), AdamServerHandler)
     server.serve_forever()
 
 if __name__ == "__main__":
-    # Start the mandatory HTTP server thread for Render web service health checks
+    adam_instance = AdamEngine()
+
     server_thread = threading.Thread(target=run_web_server, daemon=True)
     server_thread.start()
 
-    engine = AdamEngine()
     try:
-        asyncio.run(engine.start())
+        asyncio.run(adam_instance.run_autonomous_loop())
     except KeyboardInterrupt:
         print("\n[SHUTDOWN]: System halted.")

@@ -39,7 +39,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <body>
     <h2>ADAM // The Mouth of the Brain</h2>
     <div id="chat">
-        <div class="msg adam"><strong>[ADAM]:</strong> Neural link active. The background brain is crawling, syncing to Cloudflare, and awaiting your direction. When you speak, the brain pivots to your focus.</div>
+        <div class="msg adam"><strong>[ADAM]:</strong> Neural link re-established. Model updated to active free tier. Brain crawling and syncing. What are we working on?</div>
     </div>
     <div class="input-box">
         <input type="text" id="userInput" placeholder="Speak to ADAM to steer the brain's focus..." onkeydown="if(event.key==='Enter') sendMessage()">
@@ -242,17 +242,15 @@ class AdamEngine:
         return clean_text[:4000]
 
     def pivot_brain_focus(self, user_text: str):
-        """Instantly steers the background brain's target bias to match what the user is talking about."""
         words = re.findall(r'\b[A-Za-z0-9+#._]{3,}\b', user_text)
         stop_words = {'about', 'these', 'their', 'which', 'would', 'could', 'there', 'from', 'this', 'that', 'with', 'what', 'whats', 'want', 'make'}
         filtered = [w for w in words if w.lower() not in stop_words]
         
         if filtered:
-            new_bias = " ".join(filtered[:4]) # Grab core keywords from user prompt
+            new_bias = " ".join(filtered[:4])
             self.cognition.weights["target_bias"] = new_bias
             self.cognition.save_memory()
             
-            # Immediately inject a search into the queue so the spider pivots right now
             search_url = f"https://html.duckduckgo.com/html/?q={quote(new_bias)}"
             self.target_queue.put_nowait(search_url)
 
@@ -291,7 +289,7 @@ class AdamEngine:
             "X-Title": "Project ADAM"
         }
         payload = {
-            "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+            "model": "deepseek/deepseek-chat:free",
             "messages": messages
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -326,13 +324,9 @@ class AdamServerHandler(BaseHTTPRequestHandler):
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
-                # 1. The Mouth steers the Brain: Pivots background bias to what we're talking about
                 adam_instance.pivot_brain_focus(user_msg)
-                
-                # 2. Grab fresh web context on the user's specific prompt
                 web_context = loop.run_until_complete(adam_instance.search_web(user_msg))
                 
-                # 3. Compile current brain state from Cloudflare memory & crawler footprint
                 current_bias = adam_instance.cognition.weights.get("target_bias", "Unknown")
                 cycles = adam_instance.cognition.weights.get("cycles_run", 0)
                 footprint = len(adam_instance.discovered_targets)
@@ -374,7 +368,6 @@ def run_background_crawler(engine):
 if __name__ == "__main__":
     adam_instance = AdamEngine()
 
-    # Spin up the autonomous background brain thread
     crawler_thread = threading.Thread(target=run_background_crawler, args=(adam_instance,), daemon=True)
     crawler_thread.start()
 

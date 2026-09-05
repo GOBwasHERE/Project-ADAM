@@ -10,7 +10,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 
 # Configuration from Environment Variables
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "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")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 PORT = int(os.environ.get("PORT", 10000))
 

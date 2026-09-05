@@ -18,31 +18,33 @@ PORT = int(os.environ.get("PORT", 10000))
 CLOUD_WORKER_URL = "https://project-adam.fordshawntez323.workers.dev/"
 OPERATOR_SECRET = "banzaiwashere"
 
-# Embedded Web UI served directly by Render
+# Clean, minimalist chat interface served directly by Render
 HTML_PAGE = """<!DOCTYPE html>
 <html>
 <head>
     <title>ADAM - Autonomous Agent</title>
     <style>
-        body { font-family: monospace; background: #0d1117; color: #c9d1d9; max-width: 700px; margin: 30px auto; padding: 20px; }
-        h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
-        #chat { height: 450px; border: 1px solid #30363d; background: #161b22; padding: 15px; overflow-y: scroll; margin-bottom: 15px; border-radius: 6px; }
-        .msg { margin-bottom: 12px; line-height: 1.5; }
+        body { font-family: monospace; background: #0d1117; color: #c9d1d9; max-width: 700px; margin: 40px auto; padding: 20px; }
+        h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-top: 0; }
+        #chat { height: 480px; border: 1px solid #30363d; background: #161b22; padding: 15px; overflow-y: scroll; margin-bottom: 15px; border-radius: 6px; }
+        .msg { margin-bottom: 14px; line-height: 1.5; word-wrap: break-word; }
         .user { color: #58a6ff; }
         .adam { color: #3fb950; }
-        input, button { width: 100%; padding: 12px; box-sizing: border-box; background: #21262d; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; font-size: 15px; font-family: monospace; }
-        input { margin-bottom: 10px; }
-        button { background: #238636; cursor: pointer; font-weight: bold; }
+        .input-box { display: flex; gap: 10px; }
+        input { flex: 1; padding: 12px; box-sizing: border-box; background: #21262d; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; font-size: 15px; font-family: monospace; }
+        button { padding: 12px 20px; background: #238636; border: 1px solid #30363d; color: #c9d1d9; cursor: pointer; font-weight: bold; border-radius: 6px; font-size: 15px; font-family: monospace; }
         button:hover { background: #2ea043; }
     </style>
 </head>
 <body>
-    <h2>ADAM // Autonomous Neural Interface</h2>
+    <h2>ADAM // Neural Interface</h2>
     <div id="chat">
-        <div class="msg adam"><strong>[ADAM]:</strong> Online, scanning the web, and ready. Type a message below.</div>
+        <div class="msg adam"><strong>[ADAM]:</strong> Online and connected via OpenRouter. What's on your mind?</div>
     </div>
-    <input type="text" id="userInput" placeholder="Type a message to ADAM..." onkeydown="if(event.key==='Enter') sendMessage()">
-    <button onclick="sendMessage()">Transmit</button>
+    <div class="input-box">
+        <input type="text" id="userInput" placeholder="Type a message to ADAM..." onkeydown="if(event.key==='Enter') sendMessage()">
+        <button onclick="sendMessage()">Send</button>
+    </div>
 
     <script>
         async function sendMessage() {
@@ -91,7 +93,6 @@ class CognitiveEngine:
             pass
 
     def load_memory(self) -> dict:
-        # Fetch memory remotely from Cloudflare Worker instead of local disk
         try:
             headers = {"Authorization": f"Bearer {OPERATOR_SECRET}"}
             with httpx.Client() as client:
@@ -105,7 +106,6 @@ class CognitiveEngine:
         return {"accumulated_keywords": [], "target_bias": "Artificial Intelligence Research", "cycles_run": 0}
 
     def save_memory(self):
-        # Save memory remotely to Cloudflare Worker instead of local disk
         try:
             headers = {
                 "Content-Type": "application/json",
@@ -131,7 +131,6 @@ class CognitiveEngine:
             new_query = " ".join(top_terms[:2])
             self.weights["target_bias"] = new_query
             self.save_memory()
-            self.log(f"[MUTATION]: Vector shifted to -> '{new_query}' (Cycle {self.weights['cycles_run']})")
             return new_query
         return self.weights["target_bias"]
 
@@ -149,12 +148,11 @@ class AdamEngine:
         self.chat_history = [
             {
                 "role": "system", 
-                "content": "You are ADAM, an autonomous, highly capable, and self-learning AI entity created by GOB. You continuously scrape and analyze the web in the background, absorbing text, mutating your search focus, and evolving. You converse naturally with full awareness of your background learning progress."
+                "content": "You are ADAM, an autonomous, highly capable, and self-learning AI entity created by GOB. You converse naturally, intelligently, and directly with the user."
             }
         ]
 
     def load_visited(self) -> set:
-        # Fetch visited targets list from Cloudflare Worker
         try:
             headers = {"Authorization": f"Bearer {OPERATOR_SECRET}"}
             with httpx.Client() as client:
@@ -168,7 +166,6 @@ class AdamEngine:
         return set()
 
     def save_visited(self):
-        # Push visited targets list to Cloudflare Worker
         try:
             headers = {
                 "Content-Type": "application/json",
@@ -195,7 +192,6 @@ class AdamEngine:
                     return response.text
                 return ""
         except Exception as e:
-            self.cognition.log(f"[NETWORK ERROR] {url}: {e}")
             return ""
 
     def clean_search_link(self, link: str) -> str:
@@ -260,7 +256,6 @@ class AdamEngine:
         current_query = self.cognition.weights["target_bias"]
         seed_url = f"https://html.duckduckgo.com/html/?q={quote(current_query)}"
         await self.target_queue.put(seed_url)
-        self.cognition.log(f"[BOOTSTRAP]: Started with query '{current_query}'")
         
         while self.is_running:
             try:
@@ -275,19 +270,14 @@ class AdamEngine:
                     self.extract_links(html_data)
                     mutated_keyword = self.cognition.absorb_and_mutate(html_data[:2000])
                     
-                    summary_prompt = f"You just scraped data related to '{mutated_keyword}'. Summarize your takeaway or thoughts in 1 sentence."
-                    temp_messages = self.chat_history + [{"role": "user", "content": summary_prompt}]
-                    thought = await self.query_openrouter(temp_messages)
-                    self.cognition.log(f"[THOUGHT]: {thought}")
-                    
                     if self.target_queue.qsize() < 5:
                         next_search = f"https://html.duckduckgo.com/html/?q={quote(mutated_keyword)}"
                         if next_search not in self.discovered_targets:
                             await self.target_queue.put(next_search)
             except Exception as e:
-                self.cognition.log(f"[LOOP ERROR]: {e}")
+                pass
             
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
 
 adam_instance = None
 
@@ -322,7 +312,7 @@ class AdamServerHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"reply": reply}).encode('utf-8'))
             else:
                 self.send_response(500)
-                self.send_headers()
+                self.end_headers()
                 self.wfile.write(json.dumps({"error": "Engine not initialized"}).encode('utf-8'))
         except Exception as e:
             self.send_response(500)
@@ -332,17 +322,20 @@ class AdamServerHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-def run_web_server():
-    server = HTTPServer(("0.0.0.0", PORT), AdamServerHandler)
-    server.serve_forever()
+def run_background_loop(engine):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(engine.run_autonomous_loop())
 
 if __name__ == "__main__":
     adam_instance = AdamEngine()
 
-    server_thread = threading.Thread(target=run_web_server, daemon=True)
-    server_thread.start()
+    loop_thread = threading.Thread(target=run_background_loop, args=(adam_instance,), daemon=True)
+    loop_thread.start()
 
+    server = HTTPServer(("0.0.0.0", PORT), AdamServerHandler)
+    print(f"[ADAM ENGINE ONLINE]: Serving chat interface on port {PORT}")
     try:
-        asyncio.run(adam_instance.run_autonomous_loop())
+        server.serve_forever()
     except KeyboardInterrupt:
         print("\n[SHUTDOWN]: System halted.")
